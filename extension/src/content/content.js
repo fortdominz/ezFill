@@ -126,6 +126,86 @@ function watchAllFields() {
   observer.observe(document.body, { childList: true, subtree: true })
 }
 
+// ── Fill Application ──────────────────────────────────────────────────────────
+// Fills all matched fields using answers from chrome.storage.local.
+// The actual answers never left the device — this is purely local lookup.
+
+function setNativeValue(el, value) {
+  // React-controlled inputs ignore el.value = x directly.
+  // We need to fire through the native setter to trigger React's onChange.
+  const proto  = el.tagName === 'TEXTAREA'
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+  if (setter) setter.call(el, value)
+  else el.value = value
+  el.dispatchEvent(new Event('input',  { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function fillField(el, value) {
+  if (el.tagName === 'SELECT') {
+    const lv     = value.toLowerCase()
+    const option = Array.from(el.options).find((o) =>
+      o.text.toLowerCase() === lv || o.text.toLowerCase().includes(lv)
+    )
+    if (option) {
+      el.value = option.value
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  } else if (el.type === 'checkbox') {
+    const shouldCheck = ['yes', 'true', '1'].includes(value.toLowerCase())
+    if (el.checked !== shouldCheck) el.click()
+  } else if (el.type === 'radio') {
+    const siblings = document.querySelectorAll(`input[type="radio"][name="${el.name}"]`)
+    siblings.forEach((radio) => {
+      if (getLabelFor(radio).toLowerCase().includes(value.toLowerCase())) radio.click()
+    })
+  } else {
+    setNativeValue(el, value)
+  }
+}
+
+async function fillApplication() {
+  const storage = await new Promise((resolve) =>
+    chrome.storage.local.get(['user', 'answers'], resolve)
+  )
+  const { user, answers } = storage
+  if (!user || !answers || Object.keys(answers).length === 0) {
+    console.log('[EzFill] No answers saved yet — fill this application to start learning.')
+    return
+  }
+
+  const inputs = Array.from(document.querySelectorAll('input, textarea, select'))
+    .filter((el) => !['hidden', 'submit', 'button', 'file', 'image'].includes(el.type))
+
+  let filled = 0
+
+  for (const el of inputs) {
+    const label = getLabelFor(el)
+    if (!label) continue
+
+    // Ask service worker to match this label against stored questions
+    const match = await new Promise((resolve) =>
+      chrome.runtime.sendMessage(
+        { type: 'MATCH_QUESTION', userId: user.google_id, question: label },
+        resolve
+      )
+    )
+
+    if (!match?.matched || !match?.question_id) continue
+
+    const saved = answers[match.question_id]
+    if (!saved?.answer) continue
+
+    fillField(el, saved.answer)
+    filled++
+    console.log(`[EzFill] Filled "${label}" → "${saved.answer}" (confidence: ${match.confidence})`)
+  }
+
+  console.log(`[EzFill] Done — filled ${filled} of ${inputs.length} fields.`)
+}
+
 // ── Proactive Detection on Page Load ─────────────────────────────────────────
 
 function init() {
@@ -162,7 +242,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'START_FILL') {
-    console.log('[EzFill] Fill triggered. Fields:', scanFields().map(f => f.label))
+    fillApplication()
     return true
   }
 

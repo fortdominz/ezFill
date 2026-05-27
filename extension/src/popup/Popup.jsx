@@ -88,6 +88,11 @@ export default function Popup() {
     })
   }
 
+  function handleReview() {
+    chrome.tabs.create({ url: chrome.runtime.getURL('review.html') })
+    window.close()
+  }
+
   function handleDeleteData() {
     if (!window.confirm('Delete all your EzFill data? This cannot be undone.')) return
     setDeleting(true)
@@ -178,11 +183,12 @@ export default function Popup() {
                   <div style={{ fontSize: '11px', color: '#22c55e' }}>Ready to fill</div>
                 </div>
               </div>
-              <button style={s.btn} onClick={handleFill}>Fill Application</button>
+              <button style={s.btn}      onClick={handleFill}>Fill Application</button>
+              <button style={s.btnGhost} onClick={handleReview}>Review Answers</button>
             </>
           )}
 
-          <button style={s.btnGhost} onClick={handleSignOut}>Sign out</button>
+          <button style={s.btnGhost}  onClick={handleSignOut}>Sign out</button>
           <button style={s.btnDanger} onClick={handleDeleteData} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete my data'}
           </button>
@@ -206,11 +212,13 @@ export default function Popup() {
                   <div style={s.statNum}>{answerCount}</div>
                   <div style={s.statLabel}>answers saved</div>
                 </div>
+                <button style={{ ...s.btnGhost, width: 'auto', padding: '4px 10px' }}
+                  onClick={handleReview}>Review</button>
               </div>
             </div>
           )}
           <div style={s.empty}>Navigate to a job application to use EzFill.</div>
-          <button style={s.btnGhost} onClick={handleSignOut}>Sign out</button>
+          <button style={s.btnGhost}  onClick={handleSignOut}>Sign out</button>
           <button style={s.btnDanger} onClick={handleDeleteData} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete my data'}
           </button>
