@@ -7,8 +7,14 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "identity"
   ],
+
+  "oauth2": {
+    "client_id": "1051400971932-9lhc4eur4994bqrard63s83c97ji4qn7.apps.googleusercontent.com",
+    "scopes": ["email", "profile"]
+  },
 
   "host_permissions": [
     "https://*/*"
