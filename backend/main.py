@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.db import connect_db, close_db
-from app.routes import auth, profile, match
+from app.routes import auth, questions, match
 
 
 @asynccontextmanager
@@ -14,8 +14,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="EzFill API",
-    description="Backend for the EzFill Chrome extension — profile storage, answer matching.",
-    version="0.1.0",
+    description="Backend for the EzFill Chrome extension — minimal data, local-first answers.",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(profile.router)
+app.include_router(questions.router)
 app.include_router(match.router)
 
 

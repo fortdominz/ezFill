@@ -1,10 +1,10 @@
 /**
  * EzFill - Content Script
- * Runs on every page. Responsible for:
- * 1. Detecting whether the page is a job application
- * 2. Scanning the page for form fields when asked
- * 3. Filling fields with answers from the user profile
- * 4. Handling the review phase (later)
+ * Runs on every HTTPS page. Responsible for:
+ * 1. Detecting job application pages (proactively, not just when popup asks)
+ * 2. Watching fields as the user fills them — captures label + answer locally
+ * 3. Filling fields with matched answers when triggered
+ * 4. Scanning fields for the review phase
  */
 
 // ── Job Application Detection ─────────────────────────────────────────────────
@@ -34,13 +34,13 @@ const PAGE_KEYWORDS = [
 ]
 
 function isJobApplicationPage() {
-  const url = window.location.href.toLowerCase()
+  const url  = window.location.href.toLowerCase()
   if (JOB_APP_URL_PATTERNS.some((p) => p.test(url))) return true
   const text = document.body.innerText.toLowerCase()
   return PAGE_KEYWORDS.filter((kw) => text.includes(kw)).length >= 2
 }
 
-// ── Field Scanner ─────────────────────────────────────────────────────────────
+// ── Label Detection ───────────────────────────────────────────────────────────
 
 function getLabelFor(el) {
   if (el.id) {
@@ -56,15 +56,15 @@ function getLabelFor(el) {
   return ''
 }
 
+// ── Field Scanner ─────────────────────────────────────────────────────────────
+
 function scanFields() {
   const inputs = document.querySelectorAll('input, textarea, select')
   const fields = []
-
   inputs.forEach((el) => {
     if (['hidden', 'submit', 'button', 'file', 'image'].includes(el.type)) return
     const label = getLabelFor(el)
     if (!label) return
-
     fields.push({
       label,
       type: el.tagName === 'SELECT' ? 'select'
@@ -76,8 +76,75 @@ function scanFields() {
         : [],
     })
   })
-
   return fields
+}
+
+// ── Field Watcher — Learn Mode ────────────────────────────────────────────────
+// Watches every field the user fills in. When they leave a field (blur),
+// captures label + value and sends to service worker to save locally.
+
+const watchedFields = new WeakSet()
+
+function attachWatcher(el) {
+  if (watchedFields.has(el)) return
+  if (['hidden', 'submit', 'button', 'file', 'image'].includes(el.type)) return
+  watchedFields.add(el)
+
+  el.addEventListener('blur', () => {
+    const label = getLabelFor(el)
+    let   value = ''
+
+    if (el.type === 'checkbox') {
+      value = el.checked ? 'Yes' : 'No'
+    } else if (el.tagName === 'SELECT') {
+      value = el.options[el.selectedIndex]?.text?.trim() || ''
+    } else {
+      value = el.value?.trim() || ''
+    }
+
+    if (!label || !value) return
+
+    chrome.runtime.sendMessage({
+      type:      'FIELD_FILLED',
+      label,
+      value,
+      fieldType: el.tagName === 'SELECT' ? 'select'
+               : el.type === 'checkbox'  ? 'checkbox'
+               : el.type === 'radio'     ? 'radio'
+               : 'text',
+    })
+  })
+}
+
+function watchAllFields() {
+  document.querySelectorAll('input, textarea, select').forEach(attachWatcher)
+
+  // Workday, Greenhouse, Lever load fields dynamically — watch for new ones
+  const observer = new MutationObserver(() => {
+    document.querySelectorAll('input, textarea, select').forEach(attachWatcher)
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+}
+
+// ── Proactive Detection on Page Load ─────────────────────────────────────────
+
+function init() {
+  if (!isJobApplicationPage()) return
+
+  // Tell service worker this is a job app page → it will badge the icon
+  chrome.runtime.sendMessage({ type: 'JOB_APP_DETECTED' })
+
+  // Start watching fields immediately
+  watchAllFields()
+
+  console.log('[EzFill] Job application detected — field watcher active')
+}
+
+// Run on load, and again after dynamic content settles
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init)
+} else {
+  init()
 }
 
 // ── Message Listener ──────────────────────────────────────────────────────────
@@ -95,8 +162,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'START_FILL') {
-    // Will be wired up once backend matching is ready
-    console.log('[EzFill] Fill triggered. Fields found:', scanFields().map(f => f.label))
+    console.log('[EzFill] Fill triggered. Fields:', scanFields().map(f => f.label))
     return true
   }
 

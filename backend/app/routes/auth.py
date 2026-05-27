@@ -48,3 +48,16 @@ async def get_me(google_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+@router.delete("/user/{google_id}")
+async def delete_user(google_id: str):
+    """
+    Full data deletion — right to erasure (GDPR/CCPA).
+    Removes the user record and all their question patterns from MongoDB.
+    Their local answers are cleared by the extension itself.
+    """
+    db = get_db()
+    await db.users.delete_one({"google_id": google_id})
+    await db.questions.delete_many({"user_id": google_id})
+    return {"deleted": True, "message": "All server-side data removed."}
